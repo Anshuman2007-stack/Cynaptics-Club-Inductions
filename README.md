@@ -128,18 +128,6 @@ def predict_audio(path):
     return pred
 
 print(predict_audio("test.wav"))
-```
-
-------------------------------------------------------------------------
-
-# 🚧 Future Improvements
-
--   🔊 Audio Augmentation (noise, shift, stretch)\
--   🎼 CRNN (CNN + LSTM)\
--   🤖 Pretrained models like YAMNet, PANNs\
--   📱 Export to **TensorFlow Lite**\
--   🧪 Add test set accuracy reports
-
 ------------------------------------------------------------------------
 
 # 📜 License
