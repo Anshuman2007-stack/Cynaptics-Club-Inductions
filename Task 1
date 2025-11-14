@@ -1,0 +1,112 @@
+import os
+import numpy as np
+import tensorflow as tf
+import librosa
+from sklearn.model_selection import train_test_split
+from keras.models import Sequential,load_model
+from keras.layers import Conv2D, Dense, Flatten,Dropout,MaxPooling2D,BatchNormalization
+from keras.callbacks import EarlyStopping
+train_folders = {
+    'dog_bark': r"C:\Users\Anshu\OneDrive\Desktop\Data\train\train\dog_bark",
+    'drilling': r"C:\Users\Anshu\OneDrive\Desktop\Data\train\train\drilling",
+    'engine_idling': r"C:\Users\Anshu\OneDrive\Desktop\Data\train\train\engine_idling",
+    'siren': r"C:\Users\Anshu\OneDrive\Desktop\Data\train\train\siren",
+    'street_music': r"C:\Users\Anshu\OneDrive\Desktop\Data\train\train\street_music"
+}
+
+
+class_names = list(train_folders.keys())
+class_map = {name: i for i, name in enumerate(class_names)}
+
+
+TIME_STEPS = 400
+N_MELS = 64
+
+
+all_files = []
+all_labels = []
+
+for class_name, folder in train_folders.items():
+    for filename in os.listdir(folder):
+        file_path = os.path.join(folder, filename)
+        all_files.append(file_path)
+        all_labels.append(class_map[class_name])
+
+
+train_files, val_files, train_labels, val_labels = train_test_split(
+    all_files, all_labels, test_size=0.2, random_state=1
+)
+
+
+def audio_generator(files, labels):
+    for file_path, label in zip(files, labels):
+        wav, sr = librosa.load(file_path, sr=16000, mono=True)
+        mel_spec = librosa.feature.melspectrogram(
+            y=wav, sr=sr, n_fft=1024, hop_length=256, n_mels=N_MELS
+        )
+        log_mel = librosa.power_to_db(mel_spec, ref=np.max).T  # shape (time, mel)
+        # Pad
+        if log_mel.shape[0] < TIME_STEPS:
+            pad_width = TIME_STEPS - log_mel.shape[0]
+            log_mel = np.pad(log_mel, ((0, pad_width), (0, 0)), mode='constant')
+        else:
+            log_mel = log_mel[:TIME_STEPS, :]
+        yield log_mel.astype(np.float32), label
+
+
+train_dataset = tf.data.Dataset.from_generator(
+    lambda: audio_generator(train_files, train_labels),
+    output_signature=(
+        tf.TensorSpec(shape=(TIME_STEPS, N_MELS), dtype=tf.float32),
+        tf.TensorSpec(shape=(), dtype=tf.int32)
+    )
+)
+
+
+val_dataset = tf.data.Dataset.from_generator(
+    lambda: audio_generator(val_files, val_labels),
+    output_signature=(
+        tf.TensorSpec(shape=(TIME_STEPS, N_MELS), dtype=tf.float32),
+        tf.TensorSpec(shape=(), dtype=tf.int32)
+    )
+)
+
+BATCH_SIZE = 32
+train_dataset = train_dataset.shuffle(1000).batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
+val_dataset = val_dataset.batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
+model = Sequential([
+    Conv2D(32, (3,3), activation='relu', input_shape=(TIME_STEPS, N_MELS, 1)),
+    BatchNormalization(),
+    MaxPooling2D((2,2)),
+    Dropout(0.3),
+    
+    Conv2D(64, (3,3), activation='relu'),
+    BatchNormalization(),
+    MaxPooling2D((2,2)),
+    Dropout(0.3),
+
+    Conv2D(128, (3,3), activation='relu'),
+    BatchNormalization(),
+    MaxPooling2D((2,2)),
+    Dropout(0.3),
+    
+    Flatten(),
+    Dense(256, activation='relu'),
+    Dropout(0.5),
+    Dense(5, activation='softmax')
+])
+model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',  
+    metrics=['accuracy']
+)
+early_stopping=EarlyStopping(monitor='val_accuracy',patience=5,restore_best_weights=True)
+history = model.fit(
+    train_dataset,           
+    validation_data=val_dataset,  
+    epochs=80,verbose=1,callbacks=[early_stopping])
+model.save("C:\Python\Audio Classification_3.keras")
+# if __name__ == "__main__":
+#     model=load_model("C:\Python\Audio Classification.keras") 
+#     model.fit(train_dataset,validation_data=val_dataset,epochs=10,verbose=1,callbacks=[early_stopping,])
+#     model.save("C:\Python\Audio Classification.keras")
